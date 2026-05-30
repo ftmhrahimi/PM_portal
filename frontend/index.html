@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Irancell — PM Batch Validator</title>
+  <script src="config.js"></script>
   <script src="./js/pdf.min.js">
 </script>
   <script>if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc="./js/pdf.worker.min.js";
@@ -62,7 +63,7 @@
     .auth-input:focus{border-color:rgba(255,204,0,.5);}
     .auth-input::placeholder{color:rgba(255,255,255,.25);}
     .auth-btn{
-      width:100%;padding:13px;background:var(--gold);border:none;border-radius:9px;
+      width:100%;padding:13px;background:var(--gold);border:none;border-radius:99px;
       font-size:14px;font-weight:600;color:#1a1200;cursor:pointer;
       transition:all .2s;margin-top:8px;font-family:var(--font);
     }
@@ -362,13 +363,19 @@
         <div class="user-avatar" id="userAvatar">?</div>
         <span id="userLabel">—</span>
       </div>
+      <div id="llmHealthPill" class="user-pill" style="border-color:var(--gray); color:var(--gray);">
+        <span id="llmHealthIcon">⚪</span>
+        <span id="llmHealthText">LLM Unknown</span>
+      </div>
       <button class="btn-signout" onclick="doSignOut()">Sign Out</button>
     </div>
   </nav>
 
-  <div style="background:#fff;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:2px;padding:0 24px;">
+  <div id="subnav" class="subnav" style="display:none;">
     <button class="subnav-tab active" id="tabValidator" onclick="switchTab('validator')">▶ Validator</button>
     <button class="subnav-tab" id="tabHistory" onclick="switchTab('history')">📊 Dashboard</button>
+    <button class="subnav-tab" id="tabAudit" onclick="switchTab('audit')">📜 Audit Log</button>
+    <button class="subnav-tab" id="tabAdmin" onclick="switchTab('admin')" style="display:none;">⚙ System Admin</button>
   </div>
 
   <!-- VALIDATOR TAB -->
@@ -378,9 +385,11 @@
         <div style="width:38px;height:38px;background:var(--surface);border:0.5px solid var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">📁</div>
         <div class="dir-path empty" id="dirPath">No folder selected — click "Select Folder" to begin</div>
         <button class="btn-pick" onclick="document.getElementById('folderInput').click()">Select Folder</button>
+        <button class="btn-pick" onclick="document.getElementById('fileInput').click()" style="background:var(--surface);border:0.5px solid var(--border);color:#333;">Select Files</button>
         <button class="btn-run" id="btnRunAll" disabled onclick="runAll()" style="background:#1a9e55;">▶ Run All</button>
-        <button class="btn-run" id="btnStopAll" onclick="stopAll()" style="background:#dc3545;display:none;">■ Stop</button>
+        <button class="btn-run" id="btnStopAll" onclick="stopAll()" style="background:#dc3545;display:none;">■ Stop All</button>
         <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" style="display:none"/>
+        <input type="file" id="fileInput" multiple accept=".pdf" style="display:none"/>
       </div>
 
       <div class="summary-row" id="summaryRow" style="display:none">
@@ -557,6 +566,64 @@
       </div>
     </div>
   </div>
+
+  <!-- ADMIN TAB -->
+  <div id="panelAdmin" style="display:none;">
+    <div class="main-pad">
+      <div class="history-header">
+        <h2>All User Reports (Admin View)</h2>
+        <button class="btn-view" onclick="renderAdmin()">↺ Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table class="jobs-table">
+          <thead>
+            <tr>
+              <th style="width:100px;">Owner</th>
+              <th style="width:150px;">Task ID</th>
+              <th style="width:90px;">Site ID</th>
+              <th>Category</th>
+              <th style="width:110px;">Date</th>
+              <th style="width:90px;text-align:center">Conf.</th>
+              <th style="width:80px;text-align:center">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="adminTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Audit Log Tab -->
+    <div id="panelAudit" style="display:none;">
+      <div class="main-pad">
+        <div class="history-header">
+          <h2>System Audit Log</h2>
+          <div style="display:flex;gap:10px;">
+            <input type="text" id="auditFilterUser" placeholder="User..." class="db-filter-input" style="width:120px;">
+            <input type="text" id="auditFilterEvent" placeholder="Event Type..." class="db-filter-input" style="width:150px;">
+            <button class="btn-view" onclick="loadAuditLog()" style="background:var(--gold);font-weight:600;">Apply Filters</button>
+            <button class="btn-view" onclick="loadAuditLog()">↺ Refresh</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="jobs-table">
+            <thead>
+              <tr>
+                <th style="width:160px;">Time (UTC)</th>
+                <th style="width:100px;">User</th>
+                <th style="width:140px;">Event</th>
+                <th style="width:100px;">Job ID</th>
+                <th style="width:100px;">Task ID</th>
+                <th style="width:80px;">Status</th>
+                <th>Detail</th>
+                <th style="width:110px;">IP Address</th>
+              </tr>
+            </thead>
+            <tbody id="auditTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -637,62 +704,38 @@ function _stripPhotos(results) {
 }
 
 async function getUserReports(username) {
-  if (!window.storage) return _getUserReportsLS(username);
   try {
-    const idxRaw = await window.storage.get(_indexKey(username));
-    if (!idxRaw) return [];
-    const ids = JSON.parse(idxRaw.value);
-    const reports = [];
-    for (const taskId of ids) {
-      try {
-        const raw = await window.storage.get(_reportKey(username, taskId));
-        if (raw) reports.push(JSON.parse(raw.value));
-      } catch {}
-    }
-    return reports;
-  } catch {
-    return _getUserReportsLS(username);
+    const res = await fetch(`/api/reports?username=${encodeURIComponent(username)}`);
+    return await res.json();
+  } catch (err) {
+    console.error('Failed to fetch reports:', err);
+    return [];
   }
 }
 
 async function saveUserReports(username, reports) {
-  if (!window.storage) { _saveUserReportsLS(username, reports); return; }
+  // reports[0] is always the latest one being saved/updated
+  const latest = reports[0];
+  if (!latest) return;
   try {
-    // Rebuild index from the passed array (caller already spliced/unshifted)
-    const ids = reports.map(r => r.taskId).filter(Boolean);
-    await window.storage.set(_indexKey(username), JSON.stringify(ids));
-    // Upsert each report individually (stripped of photos)
-    for (const r of reports) {
-      if (!r.taskId) continue;
-      const lean = Object.assign({}, r, { results: _stripPhotos(r.results) });
-      await window.storage.set(_reportKey(username, r.taskId), JSON.stringify(lean));
-    }
-    // Delete any orphaned keys no longer in index
-    try {
-      const listed = await window.storage.list(`report:${username}:`);
-      if (listed && listed.keys) {
-        const liveKeys = new Set(ids.map(id => _reportKey(username, id)));
-        for (const k of listed.keys) {
-          if (!liveKeys.has(k)) await window.storage.delete(k);
-        }
-      }
-    } catch {}
+    await fetch('/api/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, report: latest })
+    });
   } catch (err) {
-    console.warn('window.storage save failed, falling back to localStorage:', err);
-    _saveUserReportsLS(username, reports);
+    console.error('Failed to save report:', err);
   }
 }
 
 async function deleteReportByTaskId(username, taskId) {
-  if (!window.storage) return;
   try {
-    await window.storage.delete(_reportKey(username, taskId));
-    const idxRaw = await window.storage.get(_indexKey(username));
-    if (idxRaw) {
-      const ids = JSON.parse(idxRaw.value).filter(id => id !== taskId);
-      await window.storage.set(_indexKey(username), JSON.stringify(ids));
-    }
-  } catch {}
+    await fetch(`/api/reports?username=${encodeURIComponent(username)}&taskId=${encodeURIComponent(taskId)}`, {
+      method: 'DELETE'
+    });
+  } catch (err) {
+    console.error('Failed to delete report:', err);
+  }
 }
 
 /* localStorage fallbacks (used when window.storage unavailable) */
@@ -725,45 +768,83 @@ function hideAuthError() {
   document.getElementById('authError').classList.remove('show');
 }
 
-function doLogin() {
-  const user = document.getElementById('loginUser').value.trim();
-  const pass = document.getElementById('loginPass').value;
-  if (!user || !pass) { showAuthError('Please fill all fields.'); return; }
-  const users = getUsers();
-  if (!users[user]) { showAuthError('User not found. Please register first.'); return; }
-  const hash = hashPassword(pass);
-  if (users[user].hash !== hash) { showAuthError('Incorrect password.'); return; }
-  setSessionUser({username: user, name: users[user].name});
-  startApp(user, users[user].name);
+async function doLogin(u, p) {
+  hideAuthError();
+  const username = u || document.getElementById('loginUser').value.trim();
+  const password = p || document.getElementById('loginPass').value;
+  if (!username || !password) { showAuthError('Please fill all fields.'); return; }
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      setSessionUser(data.user);
+      startApp(data.user);
+    } else {
+      showAuthError(data.error);
+    }
+  } catch (err) {
+    showAuthError('Login failed. Server unreachable.');
+  }
 }
 
-function doRegister() {
+async function doRegister() {
+  hideAuthError();
   const name = document.getElementById('regName').value.trim();
-  const user = document.getElementById('regUser').value.trim();
-  const pass = document.getElementById('regPass').value;
+  const username = document.getElementById('regUser').value.trim();
+  const password = document.getElementById('regPass').value;
   const pass2 = document.getElementById('regPass2').value;
-  if (!name || !user || !pass || !pass2) { showAuthError('Please fill all fields.'); return; }
-  if (pass.length < 6) { showAuthError('Password must be at least 6 characters.'); return; }
-  if (pass !== pass2) { showAuthError('Passwords do not match.'); return; }
-  if (!/^[a-zA-Z0-9_]+$/.test(user)) { showAuthError('Username can only contain letters, numbers, and underscores.'); return; }
-  const users = getUsers();
-  if (users[user]) { showAuthError('Username already taken. Choose another.'); return; }
-  const hash = hashPassword(pass);
-  users[user] = {name, hash, createdAt: new Date().toISOString()};
-  saveUsers(users);
-  setSessionUser({username: user, name});
-  startApp(user, name);
+  if (!name || !username || !password || !pass2) { showAuthError('Please fill all fields.'); return; }
+  if (password.length < 6) { showAuthError('Password must be at least 6 characters.'); return; }
+  if (password !== pass2) { showAuthError('Passwords do not match.'); return; }
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, name, password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      await doLogin(username, password);
+    } else {
+      showAuthError(data.error);
+    }
+  } catch (err) {
+    showAuthError('Registration failed.');
+  }
 }
 
-async function startApp(username, name) {
-  currentUser = {username, name};
+async function startApp(user) {
+  document.getElementById('subnav').style.display = 'flex';
+  // Clear any data from a previous session on the same machine
+  jobs = [];
+  renderJobsTable();
+  updateSummary();
+  updateGlobalBtns();
+  document.getElementById('summaryRow').style.display = 'none';
+  document.getElementById('dirPath').textContent = 'No folder selected — click "Select Folder" to begin';
+  document.getElementById('dirPath').classList.add('empty');
+  document.getElementById('folderInput').value = '';
+  document.getElementById('fileInput').value = '';
+
+  currentUser = user;
+  const { username, name, isAdmin } = user;
   document.getElementById('authScreen').style.display = 'none';
   document.getElementById('appShell').classList.add('visible');
   const initials = name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
   document.getElementById('userAvatar').textContent = initials;
   document.getElementById('userLabel').textContent = name;
-  // One-time migration: move existing localStorage reports to window.storage
-  await _migrateLocalStorageReports(username);
+
+  if (isAdmin) {
+    document.getElementById('tabAdmin').style.display = '';
+  } else {
+    document.getElementById('tabAdmin').style.display = 'none';
+  }
+
+  switchTab('validator');
   await renderHistory();
 }
 
@@ -784,6 +865,10 @@ function doSignOut() {
   clearSession();
   currentUser = null;
   jobs = [];
+  document.getElementById('folderInput').value = '';
+  document.getElementById('fileInput').value = '';
+  document.getElementById('tabAdmin').style.display = 'none';
+  document.getElementById('subnav').style.display = 'none';
   document.getElementById('appShell').classList.remove('visible');
   document.getElementById('authScreen').style.display = 'flex';
   document.getElementById('loginUser').value = '';
@@ -794,19 +879,52 @@ function doSignOut() {
 /* Auto-restore session */
 window.addEventListener('DOMContentLoaded', () => {
   const session = getSessionUser();
-  if (session) { startApp(session.username, session.name).catch(()=>{}); }
+  if (session) { startApp(session).catch(()=>{}); }
   loadTaskRules();
+  checkLlmHealth();
+  setInterval(checkLlmHealth, 30000);
 });
+
+async function checkLlmHealth() {
+  try {
+    const res = await fetch('/health');
+    const data = await res.json();
+    const pill = document.getElementById('llmHealthPill');
+    const icon = document.getElementById('llmHealthIcon');
+    const text = document.getElementById('llmHealthText');
+    if (data.llm && data.llm.available) {
+      pill.style.borderColor = 'var(--green)';
+      pill.style.color = 'var(--green)';
+      icon.textContent = '🟢';
+      text.textContent = 'LLM Online';
+    } else {
+      pill.style.borderColor = 'var(--red)';
+      pill.style.color = 'var(--red)';
+      icon.textContent = '🔴';
+      text.textContent = 'LLM Offline';
+    }
+  } catch (err) {
+    console.error('Failed to check LLM health:', err);
+  }
+}
 
 /* ══════════════════════════════════════════════
    TABS
 ══════════════════════════════════════════════ */
 function switchTab(tab) {
   document.getElementById('panelValidator').style.display = tab === 'validator' ? '' : 'none';
-  document.getElementById('panelHistory').style.display = tab === 'history' ? '' : 'none';
+  document.getElementById('panelHistory').style.display   = tab === 'history' ? '' : 'none';
+  document.getElementById('panelAudit').style.display     = tab === 'audit' ? '' : 'none';
+  document.getElementById('panelAdmin').style.display     = tab === 'admin' ? '' : 'none';
+
   document.getElementById('tabValidator').classList.toggle('active', tab === 'validator');
   document.getElementById('tabHistory').classList.toggle('active', tab === 'history');
+  document.getElementById('tabAudit').classList.toggle('active', tab === 'audit');
+  document.getElementById('tabAdmin').classList.toggle('active', tab === 'admin');
+
   if (tab === 'history') renderHistory().catch(()=>{});
+  if (tab === 'audit') loadAuditLog().catch(()=>{});
+  if (tab === 'admin') renderAdmin().catch(()=>{});
 }
 
 /* ══════════════════════════════════════════════
@@ -817,7 +935,6 @@ async function saveCurrentReport() {
   const job = jobs[openModalJobIdx];
   if (!currentUser) return;
   const h = job.parsedHeader || {};
-  const reports = await getUserReports(currentUser.username);
   const report = {
     id: Date.now(),
     savedAt: new Date().toISOString(),
@@ -830,13 +947,10 @@ async function saveCurrentReport() {
     fmeName: h.fmeName || '',
     parsedHeader: h,
     parsedItems: job.parsedItems,
-    results: _stripPhotos(job.results),  // strip base64 blobs — photos re-fetched from MinIO
+    results: _stripPhotos(job.results),
     confirmation: job.confirmation,
   };
-  const existing = reports.findIndex(r => r.taskId === report.taskId);
-  if (existing !== -1) reports.splice(existing, 1);
-  reports.unshift(report);
-  await saveUserReports(currentUser.username, reports);
+  await saveUserReports(currentUser.username, [report]);
   showToast('✓ Report saved');
   if (document.getElementById('panelHistory').style.display !== 'none') await renderHistory();
 }
@@ -851,6 +965,69 @@ async function renderHistory() {
   populateFilterDropdowns(reports);
   updateKpis(reports);
   await applyFilters();
+}
+
+async function renderAdmin() {
+  if (!currentUser || !currentUser.isAdmin) return;
+  try {
+    const res = await fetch('/api/admin/reports');
+    const reports = await res.json();
+    const tbody = document.getElementById('adminTableBody');
+    if (!reports.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--gray);">No reports found across all users.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = reports.map(r => {
+      const conf = r.confirmation ?? 0;
+      const cc = conf >= 80 ? 'high' : conf >= 50 ? 'mid' : 'low';
+      return `<tr>
+        <td style="font-weight:600;color:var(--gold-dark)">${escHtml(r.owner)}</td>
+        <td style="font-family:var(--mono);font-size:11px">${escHtml(r.taskId)}</td>
+        <td style="font-family:var(--mono);font-size:11px">${escHtml(r.siteId || '—')}</td>
+        <td style="font-size:11px">${escHtml(r.taskCategory || '—')}</td>
+        <td style="font-size:11px;font-family:var(--mono)">${(r.reportDate || '').substring(0, 10)}</td>
+        <td style="text-align:center"><div class="pct-cell ${cc}" style="font-size:13px">${conf}%</div></td>
+        <td style="text-align:center">
+          <button class="btn-delete" onclick="deleteReportByTaskId('${r.owner}','${r.taskId}').then(renderAdmin)">🗑</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    console.error('Admin fetch failed:', err);
+  }
+}
+
+async function loadAuditLog() {
+  const user = document.getElementById('auditFilterUser').value.trim();
+  const event = document.getElementById('auditFilterEvent').value.trim();
+  let url = '/audit?';
+  if (user) url += `username=${encodeURIComponent(user)}&`;
+  if (event) url += `event_type=${encodeURIComponent(event)}&`;
+
+  try {
+    const res = await fetch(url);
+    const logs = await res.json();
+    const tbody = document.getElementById('auditTableBody');
+    if (!logs.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="padding:40px;text-align:center;color:var(--gray);">No audit events found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = logs.map(l => {
+      const ts = l.timestamp.replace('T', ' ').substring(0, 19);
+      return `<tr>
+        <td style="font-family:var(--mono);font-size:11px;">${ts}</td>
+        <td style="font-weight:600;">${escHtml(l.username || '—')}</td>
+        <td style="font-size:11px;"><code>${l.event_type}</code></td>
+        <td style="font-family:var(--mono);font-size:10px;">${l.job_id ? l.job_id.substring(0, 8) : '—'}</td>
+        <td style="font-family:var(--mono);font-size:11px;">${escHtml(l.task_id || '—')}</td>
+        <td style="text-align:center;"><span class="vbadge ${l.status === 'success' ? 'vb-confirmed' : l.status === 'failed' ? 'vb-disputed' : 'vb-no-ev'}">${l.status || '—'}</span></td>
+        <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${escHtml(l.detail || '')}">${escHtml(l.detail || '—')}</td>
+        <td style="font-family:var(--mono);font-size:11px;">${l.ip_address || '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    console.error('Audit fetch failed:', err);
+  }
 }
 
 function populateFilterDropdowns(reports) {
@@ -1007,16 +1184,12 @@ function showToast(msg) {
 /* ══════════════════════════════════════════════
    VALIDATOR (original logic, preserved exactly)
 ══════════════════════════════════════════════ */
-// const LLM_URL   = 'http://10.130.154.133:8000/v1/chat/completions';
-//const LLM_URL = '/api/llm';
-const LLM_URL = 'http://10.224.235.31:9700/api/llm    
-const LLM_MODEL = './';
-const MINIO_BASE = 'http://10.224.235.31:9000/pm-photos';
+const LLM_URL         = window.APP_CONFIG.LLM_URL;
+const LLM_MODEL       = window.APP_CONFIG.LLM_MODEL;
+const MINIO_BASE      = window.APP_CONFIG.MINIO_BASE;
 const BASE_PHOTO_PATH = `${MINIO_BASE}/photos/`;
-const EXTRACT_API = 'http://10.224.235.31:9700/extract';
-
-// ── Set to false to skip photo extraction and read directly from MinIO ──
-const EXTRACT_PHOTOS = false;
+const EXTRACT_API     = window.APP_CONFIG.EXTRACT_API;
+const EXTRACT_PHOTOS  = window.APP_CONFIG.EXTRACT_PHOTOS;
 
 const SITES_DATA = [
   {siteId:'225-Shahrekord-BSC',lat:32.31735333333334,lon:50.861},
@@ -1034,7 +1207,7 @@ let jobs = [];
 
 
 let runAllActive  = false;  // true while Run All loop is running
-let runAllAbort   = false;  // set to true by Stop to break the loop
+let runAllStopped = false;  // set to true by Stop to break the loop
 
 
 /* ── Table rendering ─────────────────────────────────────────────────── */
@@ -1060,7 +1233,11 @@ function buildJobRow(job, idx) {
 
   let ctlHtml = '';
   if (job.status === 'running') {
-    ctlHtml = `<button class="btn-job-run" disabled>Running…</button>`;
+    if (job.paused) {
+      ctlHtml = `<button class="btn-job-run" onclick="resumeJob(${idx})" style="background:#e8f5ee;color:#1a7a45;">▶ Resume</button>`;
+    } else {
+      ctlHtml = `<button class="btn-job-run" onclick="pauseJob(${idx})" style="background:#fff7e6;color:#d4a017;border-color:#ffe7ba;">⏸ Pause</button>`;
+    }
   } else if (job.status === 'done' || job.status === 'error') {
     ctlHtml = `<button class="btn-job-run" onclick="runSingle(${idx})">↺ Re-run</button>`;
   } else {
@@ -1104,14 +1281,15 @@ function updateSummary() {
 /* ── Global buttons ──────────────────────────────────────────────────── */
 function updateGlobalBtns() {
   const hasPending = jobs.some(j => j.status === 'pending');
-  const btnRun  = document.getElementById('btnRunAll');
-  const btnStop = document.getElementById('btnStopAll');
+  const btnRun    = document.getElementById('btnRunAll');
+  const btnStop   = document.getElementById('btnStopAll');
+
   if (runAllActive) {
-    btnRun.style.display  = 'none';
+    btnRun.style.display = 'none';
     btnStop.style.display = '';
   } else {
-    btnRun.style.display  = '';
-    btnRun.disabled       = !hasPending;
+    btnRun.style.display = '';
+    btnRun.disabled = !hasPending;
     btnStop.style.display = 'none';
   }
 }
@@ -1123,36 +1301,71 @@ async function runAll() {
   runAllStopped = false;
   updateGlobalBtns();
 
-  for (let i = 0; i < jobs.length; i++) {
-    if (runAllStopped) break;
-    const s = jobs[i].status;
-    if (s === 'done' || s === 'running' || s === 'paused') continue;
-    if (s !== 'pending') continue;
-    await processJob(i);
-    if (runAllStopped) break;
-  }
+  // Parallel worker pool (max 3 concurrent jobs)
+  const MAX_CONCURRENT = 3;
+  const workers = Array(MAX_CONCURRENT).fill(null).map(async () => {
+    while (!runAllStopped) {
+      // Pick next pending job dynamically (handles newly added files)
+      const idx = jobs.findIndex(j => j.status === 'pending');
+      if (idx === -1) break;
+
+      // Mark as running immediately to lock it
+      setJob(idx, { status: 'running', pct: 0, barLabel: 'Starting…' });
+
+      // small delay to let UI update and ensure lock is seen
+      await new Promise(r => setTimeout(r, 100));
+
+      try {
+        await processJob(idx);
+      } catch (err) {
+        console.error(`Worker error on job ${idx}:`, err);
+        setJob(idx, { status: 'error', barLabel: 'Error: ' + err.message });
+      }
+    }
+  });
+
+  await Promise.all(workers);
 
   runAllActive  = false;
   runAllStopped = false;
   updateGlobalBtns();
 }
 
-/* ── Pause All ───────────────────────────────────────────────────────── */
+async function pauseJob(idx) {
+  jobs[idx].paused = true;
+  setJob(idx, { barLabel: 'Paused' });
+}
+
+async function resumeJob(idx) {
+  jobs[idx].paused = false;
+  setJob(idx, { barLabel: 'Running…' });
+}
+
+async function checkJobPause(idx) {
+  while (jobs[idx].paused && !runAllStopped) {
+    await new Promise(r => setTimeout(r, 500));
+  }
+}
+
 /* ── Stop All ────────────────────────────────────────────────────────── */
 function stopAll() {
-  runAllAbort = true;
+  runAllStopped = true;
+  runAllActive  = false;
   jobs.forEach((j, i) => {
     if (j.status === 'running') setJob(i, {status:'pending', pct:0, barLabel:'Stopped'});
   });
-  runAllActive = false;
   updateGlobalBtns();
 }
 
 /* ── Run single job independently ────────────────────────────────────── */
 async function runSingle(idx) {
   if (jobs[idx].status === 'running') return;
-  setJob(idx, {status:'pending', pct:0, barLabel:'Waiting…'});
-  await processJob(idx);
+  setJob(idx, { status: 'running', pct: 0, barLabel: 'Starting…' });
+  try {
+    await processJob(idx);
+  } catch (err) {
+    console.error(`Error on single job ${idx}:`, err);
+  }
   updateGlobalBtns();
 }
 function isEnglishPdf(fullText, filename) {
@@ -1164,18 +1377,45 @@ function isEnglishPdf(fullText, filename) {
 
 async function processJob(idx) {
   const job = jobs[idx];
-  if (EXTRACT_PHOTOS) {
-    setJob(idx, {status:'running', pct:2, barLabel:'Extracting photos...'});
-    const formData = new FormData();
-    formData.append('file', job.file);
-    const extractResp = await fetch(EXTRACT_API, {method:'POST', body:formData});
-    const extractData = await extractResp.json();
-    if (!extractData.success) throw new Error(extractData.error || 'Extraction failed');
-  } else {
-    setJob(idx, {status:'running', pct:2, barLabel:'Using existing photos from MinIO...'});
-  }
   try {
-      setJob(idx, {status:'running', pct:5, barLabel:'Reading PDF…'});
+    await checkJobPause(idx);
+
+    if (EXTRACT_PHOTOS) {
+      setJob(idx, { status: 'running', pct: 2, barLabel: 'Submitting PDF...' });
+      const formData = new FormData();
+      formData.append('file', job.file);
+      const extractResp = await fetch(EXTRACT_API, { method: 'POST', body: formData });
+      const extractData = await extractResp.json();
+      if (!extractData.success) throw new Error(extractData.error || 'Submission failed');
+
+      const job_id = extractData.job_id;
+      let jobStatus = 'pending';
+
+      // Start polling /job/<job_id>
+      while (jobStatus === 'pending' || jobStatus === 'running') {
+        await checkJobPause(idx);
+        if (runAllStopped) return;
+
+        const pollResp = await fetch(`/job/${job_id}`);
+        const pollData = await pollResp.json();
+
+        jobStatus = pollData.status;
+        if (jobStatus === 'failed') throw new Error(pollData.error || 'Extraction failed on server');
+
+        setJob(idx, {
+          pct: Math.max(5, pollData.progress_pct),
+          barLabel: pollData.progress_label || (jobStatus === 'running' ? 'Extracting...' : 'Waiting...')
+        });
+
+        if (jobStatus === 'done') break;
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    } else {
+      setJob(idx, { status: 'running', pct: 2, barLabel: 'Using existing photos from MinIO...' });
+    }
+
+    await checkJobPause(idx);
+    setJob(idx, { status: 'running', pct: 15, barLabel: 'Reading PDF…' });
     const fileBuffer = await job.file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({
       data:fileBuffer, verbosity:0, isEvalSupported:false,
@@ -1207,30 +1447,56 @@ async function processJob(idx) {
     const siteInfo = SITES_DATA.find(s => s.siteId.toUpperCase()===(job.parsedHeader.siteId||'').toUpperCase()) || null;
       setJob(idx, {pct:40, barLabel:'Loading photos…'});
     const itemPhotoMap = {};
-    await Promise.all(job.parsedItems.map(async item => {
+
+    const PHOTO_MAX = window.APP_CONFIG.PHOTO_MAX_INDEX;
+
+    async function fetchItemPhotos(item) {
       const folderPath = `${BASE_PHOTO_PATH}${resolvedTaskId}/${item.num}/`;
       const images = [];
-      for (let i = 1; i <= 50; i++) {
+      for (let i = 1; i <= PHOTO_MAX; i++) {
         const url = `${folderPath}${i}.jpg`;
         const b64 = await fetchImageAsBase64(url);
         if (!b64) break;
-        images.push({name:`${i}.jpg`, base64:b64});
+        images.push({ name: `${i}.jpg`, base64: b64 });
       }
       if (images.length > 0) itemPhotoMap[item.num] = images;
-    }));
+    }
+
+    // Concurrency-limited parallel fetch (max 4 at a time)
+    const CONCURRENCY = 4;
+    for (let s = 0; s < job.parsedItems.length; s += CONCURRENCY) {
+      await Promise.all(job.parsedItems.slice(s, s + CONCURRENCY).map(fetchItemPhotos));
+    }
+
       setJob(idx, {pct:55, barLabel:'AI validation…'});
     const results = await runValidation(job.parsedItems, itemPhotoMap, job.parsedHeader, siteInfo, (i, total) => {
       const p = 55 + Math.round((i/total)*35);
       setJob(idx, {pct:p, barLabel:`Validating ${i}/${total}…`});
-    });
+    }, idx);
     job.results = results;
     const confirmed = results.filter(r => r.verdict==='CONFIRMED').length;
     const total = results.length;
     const confirmation = total > 0 ? Math.round(confirmed/total*100) : 0;
-    setJob(idx, {status:'done', pct:100, barLabel:'Complete', confirmation});
+
+    // Check LLM health after processing completes
+    try {
+      const hRes = await fetch('/health');
+      const hData = await hRes.json();
+      if (hData.llm && !hData.llm.available) {
+        const warningHtml = `
+          <div style="background:var(--red-bg); color:var(--red); padding:12px; border-radius:8px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; font-size:13px; font-weight:500; border:0.5px solid rgba(220,53,69,0.2);">
+            <span>⚠️ Warning: the LLM server was unavailable during processing. Some validation results may be unreliable.</span>
+            <button onclick="this.parentElement.remove()" style="background:none; border:none; color:var(--red); cursor:pointer; font-size:16px;">✕</button>
+          </div>`;
+        document.getElementById('modalStats').insertAdjacentHTML('beforebegin', warningHtml);
+      }
+    } catch (e) {}
+
+    setJob(idx, { status: 'done', pct: 100, barLabel: 'Complete', confirmation });
   } catch (err) {
     console.error('Job error:', err);
-    setJob(idx, {status:'error', pct:100, barLabel:'Failed: '+err.message});
+    setJob(idx, { status: 'error', pct: 100, barLabel: 'Failed: ' + err.message });
+    throw err; // re-throw so worker knows it failed
   }
 }
 
@@ -1265,58 +1531,6 @@ async function extractTasksFromPdf(pdf, isEnglish=false) {
   return tasks;
 }
 
-/*async function extractTasksFromPdf(pdf) {
-  const tasks = []; let taskCounter = 1;
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const tc = await page.getTextContent();
-    const items = tc.items.map(it => ({ str: (it.str || '').trim(), x: it.transform[4], y: it.transform[5] })).filter(it => it.str);
-
-    const okItems = items.filter(it => /^ok$/i.test(it.str));
-    const checkboxNotOks = items.filter(it => /Not\s*Ok/i.test(it.str))
-      .filter(notOk => okItems.some(ok => Math.abs(ok.y - notOk.y) <= 10));
-    if (!checkboxNotOks.length) { page.cleanup(); continue; }
-
-    const anchorYs = checkboxNotOks.map(it => it.y).sort((a, b) => b - a);
-
-    const boundaries = anchorYs.map((anchorY, i) => {
-      // TOP: midpoint to previous anchor (or page top)
-      const top = i === 0 ? 1e5 : (anchorYs[i - 1] + anchorY) / 2;
-
-      // BOTTOM: use the anchor Y itself minus a small gap (not midpoint to next)
-      // This prevents the NEXT item's description text (which sits ABOVE the next anchor)
-      // from bleeding into THIS item's text collection
-      const bottom = anchorY - 2;   // ← key fix: stop just above the checkbox row itself
-
-      return { anchorY, top, bottom };
-    });
-
-    const strips = await getCheckboxStripImage(pdf, pageNum, anchorYs);
-    const results = await Promise.all(strips.map(detectCheckboxFromStrip));
-
-    for (let bi = 0; bi < boundaries.length; bi++) {
-      const { top, bottom, anchorY } = boundaries[bi];
-      const result = results[bi] ?? 'OK';
-
-      // Collect text that belongs to THIS item:
-      // - Must be between top and bottom boundaries
-      // - Must be ABOVE the anchor (checkbox) row, not below it
-      // - Exclude checkbox label text
-      const box = items
-        .filter(it => it.y < top && it.y > bottom)
-        .filter(it => it.y > anchorY + 2)  // ← must be above the checkbox row
-        .filter(it => !/(^|\b)(ok|not\s*ok)(\b|$)|☑|☐|✓|✗/i.test(it.str));
-
-      box.sort((a, b) => Math.abs(a.y - b.y) > 3 ? b.y - a.y : a.x - b.x); // ← RTL: sort by x ascending for Persian
-
-      const desc = box.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
-      if (desc.length > 5) tasks.push({ num: taskCounter++, desc, result });
-    }
-    page.cleanup();
-  }
-  await pdf.destroy();
-  return tasks;
-}*/
 async function getCheckboxStripImage(pdf,pageNum,anchorYs){
   const page=await pdf.getPage(pageNum);const viewport=page.getViewport({scale:2.0});
   const canvas=document.createElement('canvas');canvas.width=viewport.width;canvas.height=viewport.height;
@@ -1362,9 +1576,7 @@ async function extractItemsWithBatching(tasks, isEnglish=false){
 }
 
 async function callLLMExtract(textChunk, isEnglish=false){
-  /*const prompt=`The following text is raw extraction from a PDF maintenance report. It may be in Persian or English.\nTASK:\n1. If Persian: fix character shaping and joining.\n2. If English: fix any broken words.\n3. Extract each unique maintenance task description cleanly.\n4. Return ONLY a JSON array — no markdown, no preamble.\n\nFormat: [{"num":1,"desc":"clean task description","result":"NOT_OK"}]\n\nRules:\n- Ignore header lines (Site ID, Contractor, Region, Task ID, etc.)\n- Do not duplicate sentences\n\nRAW TEXT:\n${textChunk}`;*/
     const prompt = isEnglish
-    // ? `Extract numbered maintenance tasks from this English text. Each item at text starts with a number like "1.", "2.", etc.\nReturn ONLY a JSON array, no markdown:\n[{"num":1,"desc":"full task description","result":"NOT_OK"}]\nRules:\n- num = the leading integer\n- desc = the complete description for that number, joined cleanly\n- result is always NOT_OK\n- One entry per number, do not split or merge numbered items\n- Ignore lines without a number prefix\nRAW TEXT:\n${textChunk}`
       ? `Extract numbered maintenance tasks from this English text. Each item starts with a number like "1.", "2.", etc.\nThe same description may appear 2-5 times repeated — pick it ONCE only.\nReturn ONLY a JSON array, no markdown:\n[{"num":1,"desc":"full task description","result":"NOT_OK"}]\nRules:\n- num = the leading integer\n- desc = the complete clean description for that number, NO repetition inside desc\n- result is always NOT_OK\n- One entry per number, never duplicate the same number\n- If the same sentence appears multiple times inside one item's text, include it only once\n- Ignore lines without a number prefix\n- Ignore lines containing only "battery wo falt darad" or "Not OK" or "OK"\nRAW TEXT:\n${textChunk}`  
     : `The following text is raw extraction from a PDF maintenance report. It may be in Persian or English.\nTASK:\n1. If Persian: fix character shaping and joining.\n2. If English: fix any broken words.\n3. Extract each unique maintenance task description cleanly.\n4. Return ONLY a JSON array — no markdown, no preamble.\n\nFormat: [{"num":1,"desc":"clean task description","result":"NOT_OK"}]\n\nRules:\n- Ignore header lines (Site ID, Contractor, Region, Task ID, etc.)\n- Do not duplicate sentences\n\nRAW TEXT:\n${textChunk}`;
   try{
@@ -1374,62 +1586,6 @@ async function callLLMExtract(textChunk, isEnglish=false){
     const match=raw.match(/\[[\s\S]*\]/);return match?JSON.parse(match[0]):[];
   }catch{return[];}
 }
-
-// async function cleanConsecutiveTasks(items) {
-//   // Check each consecutive pair: if task[i] contains task[i+1]'s text, remove it from task[i]
-//   if (items.length < 2) return items;
-//   const cleaned = items.map(it => ({...it}));
-//   for (let i = 0; i < cleaned.length - 1; i++) {
-//     const curr = cleaned[i];
-//     const next = cleaned[i + 1];
-//     if (!curr.desc || !next.desc) continue;
-
-//     // Quick JS check first: if next task text appears inside current task text
-//     // Use a significant overlap threshold (>30 chars) to avoid false positives
-//     const nextShort = next.desc.replace(/\s+/g,' ').trim();
-//     const currShort = curr.desc.replace(/\s+/g,' ').trim();
-//     if (nextShort.length < 15) continue;  // too short to check
-
-//     // Check if a significant portion of next.desc appears in curr.desc
-//     const overlapLen = 30;
-//     const nextSample = nextShort.substring(0, overlapLen);
-//     if (!currShort.includes(nextSample)) continue;  // no overlap, skip LLM call
-
-//     // Overlap detected — ask LLM to clean it
-//     try {
-//       const prompt = `You are cleaning extracted text from a Persian/English maintenance report PDF.
-// Task ${curr.num} text below incorrectly contains text that belongs to task ${next.num}.
-// Remove ONLY the part of task ${curr.num} that belongs to task ${next.num}.
-// Keep task ${curr.num}'s own text intact.
-
-// Task ${curr.num} (may contain extra text from task ${next.num}):
-// ${curr.desc}
-
-// Task ${next.num} (correct text for reference):
-// ${next.desc}
-
-// Return ONLY a JSON object, no markdown:
-// {"num":${curr.num},"desc":"cleaned text of task ${curr.num} only"}`;
-
-//       const res = await fetch(LLM_URL, {
-//         method: 'POST',
-//         headers: {'Content-Type':'application/json'},
-//         body: JSON.stringify({model:LLM_MODEL, messages:[{role:'user',content:prompt}], temperature:0})
-//       });
-//       if (!res.ok) continue;
-//       const data = await res.json();
-//       const raw = data.choices?.[0]?.message?.content || '';
-//       const match = raw.match(/\{[\s\S]*\}/);
-//       if (match) {
-//         const result = JSON.parse(match[0]);
-//         if (result.desc && result.desc.length > 5) {
-//           cleaned[i].desc = result.desc;
-//         }
-//       }
-//     } catch(e) { /* keep original if LLM fails */ }
-//   }
-//   return cleaned;
-// }
 
 async function cleanConsecutiveTasks(items) {
   if (items.length < 2) return items;
@@ -1509,12 +1665,17 @@ async function fetchImageAsBase64(url){
   }catch{return null;}
 }
 
-async function runValidation(parsedItems,itemPhotoMap,parsedHeader,siteInfo,onProgress){
+async function runValidation(parsedItems,itemPhotoMap,parsedHeader,siteInfo,onProgress, jobIdx){
   const results=[];
   const siteLat=siteInfo?.lat??null,siteLon=siteInfo?.lon??null;
   const reportDate=parsedHeader.reportDate||'';
   const total=parsedItems.length;
+
+  const DATE_TOL = window.APP_CONFIG.DATE_TOLERANCE_DAYS;
+  const GPS_RADIUS = window.APP_CONFIG.GPS_RADIUS_METERS;
+
   for(let i=0;i<total;i++){
+    if (jobIdx !== undefined) await checkJobPause(jobIdx);
     const item=parsedItems[i];const photos=itemPhotoMap[item.num]||[];
     const rule=TASK_RULES?.[parsedHeader.taskCategory]?.[parsedHeader.taskSubcategory]?.[item.num]??null;
     onProgress(i+1,total);
@@ -1522,9 +1683,9 @@ async function runValidation(parsedItems,itemPhotoMap,parsedHeader,siteInfo,onPr
     const metaList=await Promise.all(photos.map(p=>extractImageMeta(p,item.num,parsedHeader.taskId)));
     const reportDateOnly=reportDate.match(/(\d{4}-\d{2}-\d{2})/)?.[1]||'';
     for(const m of metaList){
-      if(m.date){const diffDays=Math.abs(new Date(m.date)-new Date(reportDateOnly))/86400000;m.dateOk=diffDays<=3;m.dateLabel=m.dateOk?`✓ ${m.date}`:`✗ ${m.date}`;}
+      if(m.date){const diffDays=Math.abs(new Date(m.date)-new Date(reportDateOnly))/86400000;m.dateOk=diffDays<=DATE_TOL;m.dateLabel=m.dateOk?`✓ ${m.date}`:`✗ ${m.date}`;}
       else{m.dateOk=false;m.dateLabel='✗ No JSON';}
-      if(siteLat!=null&&m.lat!=null){m.dist=Math.round(haversine(siteLat,siteLon,m.lat,m.lon));m.gpsOk=m.dist<=300;m.gpsLabel=m.gpsOk?`✓ On-site (${m.dist}m)`:`✗ Off-site (${m.dist}m)`;}
+      if(siteLat!=null&&m.lat!=null){m.dist=Math.round(haversine(siteLat,siteLon,m.lat,m.lon));m.gpsOk=m.dist<=GPS_RADIUS;m.gpsLabel=m.gpsOk?`✓ On-site (${m.dist}m)`:`✗ Off-site (${m.dist}m)`;}
       else{m.dist=null;m.gpsOk=false;m.gpsLabel='✗ GPS missing';}
     }
     const systemCauses=[];
@@ -1742,26 +1903,36 @@ function lbKeyHandler(e) {
   if (e.key === 'Escape')     closeLightbox();
 }
 
-// folderInput listener — placed here so all functions above are already defined
-// (functions are hoisted, but referenced via function expressions would not be;
-//  all our functions use 'function' declarations so this is safe)
-document.getElementById('folderInput').addEventListener('change', function(e) {
-  const files = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-  if (!files.length) return;
-  const pathParts = files[0].webkitRelativePath.split('/');
-  const folderName = pathParts.length > 1 ? pathParts.slice(0,-1).join('/') : '(root)';
-  document.getElementById('dirPath').textContent = folderName + '  (' + files.length + ' PDF file' + (files.length!==1?'s':'') + ')';
-  document.getElementById('dirPath').classList.remove('empty');
-  jobs = files.map(f => ({
-    file:f, taskId:f.name.replace(/\.pdf$/i,''), status:'pending',
-    pct:0, barLabel:'Waiting…', confirmation:null,
-    results:[], parsedItems:[], parsedHeader:{},
+function handleFiles(newFiles) {
+  const pdfs = Array.from(newFiles).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+  if (!pdfs.length) return;
+
+  const newJobs = pdfs.map(f => ({
+    file: f,
+    taskId: f.name.replace(/\.pdf$/i, ''),
+    status: 'pending',
+    pct: 0,
+    barLabel: 'Waiting…',
+    confirmation: null,
+    results: [],
+    parsedItems: [],
+    parsedHeader: {},
+    paused: false
   }));
+
+  jobs = jobs.concat(newJobs);
+
+  document.getElementById('dirPath').textContent = `${jobs.length} PDF file${jobs.length !== 1 ? 's' : ''} loaded`;
+  document.getElementById('dirPath').classList.remove('empty');
   document.getElementById('summaryRow').style.display = 'grid';
+
   renderJobsTable();
   updateSummary();
   updateGlobalBtns();
-});
+}
+
+document.getElementById('folderInput').addEventListener('change', e => handleFiles(e.target.files));
+document.getElementById('fileInput').addEventListener('change', e => handleFiles(e.target.files));
 </script>
 
 <!-- ══ LIGHTBOX ══ -->
