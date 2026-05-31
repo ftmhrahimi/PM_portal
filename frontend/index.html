@@ -384,8 +384,9 @@
       <div class="dir-card">
         <div style="width:38px;height:38px;background:var(--surface);border:0.5px solid var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">📁</div>
         <div class="dir-path empty" id="dirPath">No folder selected — click "Select Folder" to begin</div>
-        <button class="btn-pick" onclick="document.getElementById('folderInput').click()">Select Folder</button>
-        <button class="btn-pick" onclick="document.getElementById('fileInput').click()" style="background:var(--surface);border:0.5px solid var(--border);color:#333;">Select Files</button>
+        <button class="btn-pick" id="btnSelectFolder" onclick="document.getElementById('folderInput').click()">Select Folder</button>
+        <button class="btn-pick" id="btnAddFiles" onclick="document.getElementById('fileInput').click()" style="background:var(--surface);border:0.5px solid var(--border);color:#333;display:none;">＋ Add Files</button>
+        <button class="btn-pick" id="btnClearFolder" onclick="clearFolder()" style="background:#6c757d;color:white;display:none;margin-left:5px;">✕ Clear</button>
         <button class="btn-run" id="btnRunAll" disabled onclick="runAll()" style="background:#1a9e55;">▶ Run All</button>
         <button class="btn-run" id="btnStopAll" onclick="stopAll()" style="background:#dc3545;display:none;">■ Stop All</button>
         <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" style="display:none"/>
@@ -846,6 +847,32 @@ async function startApp(user) {
 
   switchTab('validator');
   await renderHistory();
+
+  // Bug 4: Restore folder selection from session storage
+  const lastLabel = sessionStorage.getItem('lastFolderLabel');
+  const lastNames = sessionStorage.getItem('lastFileNames');
+  if (lastLabel && lastNames) {
+    const names = JSON.parse(lastNames);
+    document.getElementById('dirPath').textContent = lastLabel + ' (re-select folder to reprocess)';
+    document.getElementById('dirPath').classList.remove('empty');
+    document.getElementById('summaryRow').style.display = 'grid';
+    // Restore jobs array with placeholder file objects (names only)
+    jobs = names.map(name => ({
+      file: { name },
+      taskId: name.replace(/\.pdf$/i, ''),
+      status: 'pending',
+      pct: 0,
+      barLabel: 'Re-select folder to process',
+      confirmation: null,
+      results: [],
+      parsedItems: [],
+      parsedHeader: {},
+      paused: false
+    }));
+    renderJobsTable();
+    updateSummary();
+    updateGlobalBtns();
+  }
 }
 
 async function _migrateLocalStorageReports(username) {
@@ -880,7 +907,7 @@ function doSignOut() {
 window.addEventListener('DOMContentLoaded', () => {
   const session = getSessionUser();
   if (session) { startApp(session).catch(()=>{}); }
-  loadTaskRules();
+
   checkLlmHealth();
   setInterval(checkLlmHealth, 30000);
 });
@@ -953,6 +980,32 @@ async function saveCurrentReport() {
   await saveUserReports(currentUser.username, [report]);
   showToast('✓ Report saved');
   if (document.getElementById('panelHistory').style.display !== 'none') await renderHistory();
+// Bug 4: Restore folder selection from session storage
+  const lastLabel = sessionStorage.getItem('lastFolderLabel');
+  const lastNames = sessionStorage.getItem('lastFileNames');
+  if (lastLabel && lastNames) {
+    const names = JSON.parse(lastNames);
+    document.getElementById('dirPath').textContent = lastLabel + ' (re-select folder to reprocess)';
+    document.getElementById('dirPath').classList.remove('empty');
+    document.getElementById('summaryRow').style.display = 'grid';
+    // Restore jobs array with placeholder file objects (names only)
+    jobs = names.map(name => ({
+      file: { name },
+      taskId: name.replace(/.pdf$/i, ''),
+      status: 'pending',
+      pct: 0,
+      barLabel: 'Re-select folder to process',
+      confirmation: null,
+      results: [],
+      parsedItems: [],
+      parsedHeader: {},
+      paused: false
+    }));
+    renderJobsTable();
+    updateSummary();
+    updateGlobalBtns();
+  }
+
 }
 
 /* ── Dashboard state ── */
@@ -1152,6 +1205,32 @@ async function deleteHistoryReport(idx) {
   await saveUserReports(currentUser.username, reports);
   if (taskId && window.storage) await deleteReportByTaskId(currentUser.username, taskId);
   await renderHistory();
+// Bug 4: Restore folder selection from session storage
+  const lastLabel = sessionStorage.getItem('lastFolderLabel');
+  const lastNames = sessionStorage.getItem('lastFileNames');
+  if (lastLabel && lastNames) {
+    const names = JSON.parse(lastNames);
+    document.getElementById('dirPath').textContent = lastLabel + ' (re-select folder to reprocess)';
+    document.getElementById('dirPath').classList.remove('empty');
+    document.getElementById('summaryRow').style.display = 'grid';
+    // Restore jobs array with placeholder file objects (names only)
+    jobs = names.map(name => ({
+      file: { name },
+      taskId: name.replace(/.pdf$/i, ''),
+      status: 'pending',
+      pct: 0,
+      barLabel: 'Re-select folder to process',
+      confirmation: null,
+      results: [],
+      parsedItems: [],
+      parsedHeader: {},
+      paused: false
+    }));
+    renderJobsTable();
+    updateSummary();
+    updateGlobalBtns();
+  }
+
   showToast('Report deleted');
 }
 
@@ -1207,6 +1286,7 @@ let jobs = [];
 
 
 let runAllActive  = false;  // true while Run All loop is running
+let runAllAbort   = false;  // Bug 1: added missing declaration
 let runAllStopped = false;  // set to true by Stop to break the loop
 
 
@@ -1242,6 +1322,10 @@ function buildJobRow(job, idx) {
     ctlHtml = `<button class="btn-job-run" onclick="runSingle(${idx})">↺ Re-run</button>`;
   } else {
     ctlHtml = `<button class="btn-job-run" onclick="runSingle(${idx})">▶ Run</button>`;
+    // Bug 6: Individual remove button for pending jobs
+    if (job.status === 'pending') {
+      ctlHtml += `<button class="btn-job-run" onclick="removeJob(${idx})" style="background:#6c757d;color:white;margin-left:4px;padding:2px 8px;" title="Remove">✕</button>`;
+    }
   }
 
   return `<tr>
@@ -1281,17 +1365,34 @@ function updateSummary() {
 /* ── Global buttons ──────────────────────────────────────────────────── */
 function updateGlobalBtns() {
   const hasPending = jobs.some(j => j.status === 'pending');
+  const isAnyRunning = jobs.some(j => j.status === 'running');
   const btnRun    = document.getElementById('btnRunAll');
   const btnStop   = document.getElementById('btnStopAll');
 
   if (runAllActive) {
     btnRun.style.display = 'none';
-    btnStop.style.display = '';
   } else {
     btnRun.style.display = '';
     btnRun.disabled = !hasPending;
-    btnStop.style.display = 'none';
   }
+
+  // Bug 2: Stop button visibility is coupled to running state
+  btnStop.style.display = isAnyRunning ? '' : 'none';
+
+  // Bug 5 & 6 visibility
+  const hasJobs = jobs.length > 0;
+  const btnClear = document.getElementById('btnClearFolder');
+  const btnAdd = document.getElementById('btnAddFiles');
+  if (btnClear) btnClear.style.display = hasJobs ? 'inline-block' : 'none';
+  if (btnAdd) btnAdd.style.display = hasJobs ? 'inline-block' : 'none';
+
+  // Bug 7: Disable controls during execution
+  document.getElementById('folderInput').disabled = isAnyRunning;
+  document.getElementById('fileInput').disabled = isAnyRunning;
+  const btnSelect = document.getElementById('btnSelectFolder');
+  if (btnSelect) btnSelect.disabled = isAnyRunning;
+  if (btnClear) btnClear.disabled = isAnyRunning;
+  if (btnAdd) btnAdd.disabled = isAnyRunning;
 }
 
 /* ── Run All ─────────────────────────────────────────────────────────── */
@@ -1926,6 +2027,40 @@ function handleFiles(newFiles) {
   document.getElementById('dirPath').classList.remove('empty');
   document.getElementById('summaryRow').style.display = 'grid';
 
+  renderJobsTable();
+  updateSummary();
+  updateGlobalBtns();
+
+  // Bug 4: Persist folder selection
+  sessionStorage.setItem('lastFolderLabel', document.getElementById('dirPath').textContent);
+  sessionStorage.setItem('lastFileNames', JSON.stringify(jobs.map(j => j.file.name)));
+}
+
+function clearFolder() {
+  jobs = [];
+  document.getElementById('dirPath').textContent = 'No folder selected — click "Select Folder" to begin';
+  document.getElementById('dirPath').classList.add('empty');
+  document.getElementById('summaryRow').style.display = 'none';
+  sessionStorage.removeItem('lastFolderLabel');
+  sessionStorage.removeItem('lastFileNames');
+  document.getElementById('folderInput').value = '';
+  document.getElementById('fileInput').value = '';
+  renderJobsTable();
+  updateSummary();
+  updateGlobalBtns();
+}
+
+function removeJob(idx) {
+  if (jobs[idx].status !== 'pending') return;
+  jobs.splice(idx, 1);
+  sessionStorage.setItem('lastFileNames', JSON.stringify(jobs.map(j => j.file.name)));
+  if (jobs.length === 0) {
+    document.getElementById('dirPath').textContent = 'No folder selected — click "Select Folder" to begin';
+    document.getElementById('dirPath').classList.add('empty');
+    document.getElementById('summaryRow').style.display = 'none';
+  } else {
+    document.getElementById('dirPath').textContent = `${jobs.length} PDF file${jobs.length !== 1 ? 's' : ''} loaded`;
+  }
   renderJobsTable();
   updateSummary();
   updateGlobalBtns();
