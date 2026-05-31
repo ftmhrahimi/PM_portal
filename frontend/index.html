@@ -190,11 +190,21 @@
     .btn-job-run{padding:5px 10px;background:#e8f5ee;border:0.5px solid #b8e6cc;border-radius:6px;font-size:11px;font-weight:600;color:#1a7a45;cursor:pointer;white-space:nowrap;}
     .btn-job-run:hover{background:#d0eddc;}
     .btn-job-run:disabled{background:#f0f0f0;border-color:#ddd;color:#aaa;cursor:not-allowed;}
+.btn-job-delete{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:26px;height:26px;margin-left:4px;
+  background:transparent;border:0.5px solid var(--border);
+  border-radius:6px;font-size:13px;cursor:pointer;
+  color:var(--gray);transition:all .15s;vertical-align:middle;flex-shrink:0;
+}
+.btn-job-delete:hover{background:var(--red-bg);border-color:#f5b8b8;color:var(--red);}
+.col-ctl-wrap{display:flex;align-items:center;gap:4px;justify-content:center;}
     .bar-wrap{display:flex;align-items:center;gap:8px;}
     .bar-track{flex:1;height:7px;background:#eee;border-radius:99px;overflow:hidden;}
     .bar-fill{height:100%;border-radius:99px;background:var(--gold);transition:width .35s ease;}
     .bar-fill.done{background:var(--green);}
     .bar-fill.error{background:var(--red);}
+    .bar-fill.stopped{background:#6c757d;}
     .bar-label{font-size:11px;color:var(--gray);white-space:nowrap;min-width:120px;font-family:var(--mono);}
     .pct-cell{font-size:15px;font-weight:600;}
     .pct-cell.high{color:var(--green);}
@@ -385,7 +395,7 @@
         <div style="width:38px;height:38px;background:var(--surface);border:0.5px solid var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">📁</div>
         <div class="dir-path empty" id="dirPath">No folder selected — click "Select Folder" to begin</div>
         <button class="btn-pick" id="btnSelectFolder" onclick="document.getElementById('folderInput').click()">Select Folder</button>
-        <button class="btn-pick" id="btnAddFiles" onclick="document.getElementById('fileInput').click()" style="background:var(--surface);border:0.5px solid var(--border);color:#333;display:none;">＋ Add Files</button>
+        <button class="btn-pick" id="btnAddFiles" onclick="document.getElementById('fileInput').click()" style="background:var(--surface);border:0.5px solid var(--border);color:#333;">＋ Add Files</button>
         <button class="btn-pick" id="btnClearFolder" onclick="clearFolder()" style="background:#6c757d;color:white;display:none;margin-left:5px;">✕ Clear</button>
         <button class="btn-run" id="btnRunAll" disabled onclick="runAll()" style="background:#1a9e55;">▶ Run All</button>
         <button class="btn-run" id="btnStopAll" onclick="stopAll()" style="background:#dc3545;display:none;">■ Stop All</button>
@@ -706,7 +716,7 @@ function _stripPhotos(results) {
 
 async function getUserReports(username) {
   try {
-    const res = await fetch(`/api/reports?username=${encodeURIComponent(username)}`);
+    const res = await fetch(window.APP_CONFIG.BACKEND_URL+`/api/reports?username=${encodeURIComponent(username)}`);
     return await res.json();
   } catch (err) {
     console.error('Failed to fetch reports:', err);
@@ -719,7 +729,7 @@ async function saveUserReports(username, reports) {
   const latest = reports[0];
   if (!latest) return;
   try {
-    await fetch('/api/reports', {
+    await fetch(window.APP_CONFIG.BACKEND_URL+'/api/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, report: latest })
@@ -731,7 +741,7 @@ async function saveUserReports(username, reports) {
 
 async function deleteReportByTaskId(username, taskId) {
   try {
-    await fetch(`/api/reports?username=${encodeURIComponent(username)}&taskId=${encodeURIComponent(taskId)}`, {
+    await fetch(window.APP_CONFIG.BACKEND_URL+`/api/reports?username=${encodeURIComponent(username)}&taskId=${encodeURIComponent(taskId)}`, {
       method: 'DELETE'
     });
   } catch (err) {
@@ -775,7 +785,7 @@ async function doLogin(u, p) {
   const password = p || document.getElementById('loginPass').value;
   if (!username || !password) { showAuthError('Please fill all fields.'); return; }
   try {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(window.APP_CONFIG.BACKEND_URL+'/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
@@ -802,7 +812,7 @@ async function doRegister() {
   if (password.length < 6) { showAuthError('Password must be at least 6 characters.'); return; }
   if (password !== pass2) { showAuthError('Passwords do not match.'); return; }
   try {
-    const res = await fetch('/api/auth/register', {
+    const res = await fetch(window.APP_CONFIG.BACKEND_URL+'/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, name, password })
@@ -912,29 +922,51 @@ window.addEventListener('DOMContentLoaded', () => {
   setInterval(checkLlmHealth, 30000);
 });
 
+// async function checkLlmHealth() {
+//   try {
+//     const res = await fetch('/health');
+//     const data = await res.json();
+//     const pill = document.getElementById('llmHealthPill');
+//     const icon = document.getElementById('llmHealthIcon');
+//     const text = document.getElementById('llmHealthText');
+//     if (data.llm && data.llm.available) {
+//       pill.style.borderColor = 'var(--green)';
+//       pill.style.color = 'var(--green)';
+//       icon.textContent = '🟢';
+//       text.textContent = 'LLM Online';
+//     } else {
+//       pill.style.borderColor = 'var(--red)';
+//       pill.style.color = 'var(--red)';
+//       icon.textContent = '🔴';
+//       text.textContent = 'LLM Offline';
+//     }
+//   } catch (err) {
+//     console.error('Failed to check LLM health:', err);
+//   }
+// }
 async function checkLlmHealth() {
+  const pill = document.getElementById('llmHealthPill');
+  const icon = document.getElementById('llmHealthIcon');
+  const text = document.getElementById('llmHealthText');
   try {
-    const res = await fetch('/health');
+    const res = await fetch('http://10.224.235.31:9701/health');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const pill = document.getElementById('llmHealthPill');
-    const icon = document.getElementById('llmHealthIcon');
-    const text = document.getElementById('llmHealthText');
-    if (data.llm && data.llm.available) {
-      pill.style.borderColor = 'var(--green)';
-      pill.style.color = 'var(--green)';
-      icon.textContent = '🟢';
-      text.textContent = 'LLM Online';
-    } else {
-      pill.style.borderColor = 'var(--red)';
-      pill.style.color = 'var(--red)';
-      icon.textContent = '🔴';
-      text.textContent = 'LLM Offline';
-    }
+    const online = data.llm && data.llm.available;
+    pill.style.borderColor = online ? 'var(--green)' : 'var(--red)';
+    pill.style.color      = online ? 'var(--green)' : 'var(--red)';
+    icon.textContent = online ? '🟢' : '🔴';
+    text.textContent = online ? 'LLM Online' : 'LLM Offline';
   } catch (err) {
+
+      
     console.error('Failed to check LLM health:', err);
+    pill.style.borderColor = 'var(--red)';
+    pill.style.color       = 'var(--red)';
+    icon.textContent = '🔴';
+    text.textContent = 'LLM Offline';
   }
 }
-
 /* ══════════════════════════════════════════════
    TABS
 ══════════════════════════════════════════════ */
@@ -1023,7 +1055,7 @@ async function renderHistory() {
 async function renderAdmin() {
   if (!currentUser || !currentUser.isAdmin) return;
   try {
-    const res = await fetch('/api/admin/reports');
+    const res = await fetch(window.APP_CONFIG.BACKEND_URL+'/api/admin/reports');
     const reports = await res.json();
     const tbody = document.getElementById('adminTableBody');
     if (!reports.length) {
@@ -1282,6 +1314,7 @@ const SITES_DATA = [
 
 let TASK_RULES = {};
 let jobs = [];
+const jobControllers = {}; // stores AbortController per job index
 
 
 
@@ -1304,39 +1337,33 @@ function buildJobRow(job, idx) {
   const pctHtml = job.confirmation !== null
     ? `<div class="pct-cell ${job.confirmation>=80?'high':job.confirmation>=50?'mid':'low'}">${job.confirmation}%</div>`
     : `<div class="pct-cell na">—</div>`;
-  const reportHtml = job.status === 'done'
+ const reportHtml = job.status === 'done'
     ? `<button class="btn-view ready" onclick="openModal(${idx})">View Report →</button>`
     : job.status === 'error'
     ? `<span style="font-size:11px;color:var(--red)">Error</span>`
+    : job.status === 'stopped'
+    ? `<span style="font-size:11px;color:#6c757d">Stopped</span>`
     : `<button class="btn-view" disabled>—</button>`;
-  const fillClass = job.status==='done'?' done':job.status==='error'?' error':'';
-
-  let ctlHtml = '';
-  if (job.status === 'running') {
-    if (job.paused) {
-      ctlHtml = `<button class="btn-job-run" onclick="resumeJob(${idx})" style="background:#e8f5ee;color:#1a7a45;">▶ Resume</button>`;
-    } else {
-      ctlHtml = `<button class="btn-job-run" onclick="pauseJob(${idx})" style="background:#fff7e6;color:#d4a017;border-color:#ffe7ba;">⏸ Pause</button>`;
+  const fillClass = job.status==='done'?' done':job.status==='error'?' error':job.status==='stopped'?' stopped':'';
+    let ctlHtml = '';
+      if (job.status === 'running') {
+        ctlHtml = `<div class="col-ctl-wrap"><button class="btn-job-run" onclick="stopSingle(${idx})" style="background:#fff0f0;color:#dc3545;border-color:#f5b8b8;">■ Stop</button></div>`;
+      } else if (job.status === 'done') {
+        ctlHtml = `<div class="col-ctl-wrap"><button class="btn-job-run" onclick="runSingle(${idx})">↺ Re-run</button><button class="btn-job-delete" onclick="removeJob(${idx})" title="Remove">🗑</button></div>`;
+      } else if (job.status === 'error' || job.status === 'stopped') {
+        ctlHtml = `<div class="col-ctl-wrap"><button class="btn-job-run" onclick="runSingle(${idx})">↺ Re-run</button><button class="btn-job-delete" onclick="removeJob(${idx})" title="Remove">🗑</button></div>`;
+      } else {
+        ctlHtml = `<div class="col-ctl-wrap"><button class="btn-job-run" onclick="runSingle(${idx})">▶ Run</button><button class="btn-job-delete" onclick="removeJob(${idx})" title="Remove">🗑</button></div>`;
+      }
+      return `<tr>
+        <td class="col-id" style="font-family:var(--mono);font-size:12px;font-weight:500;">${escHtml(job.file.name)}</td>
+        <td class="col-task" style="font-family:var(--mono);font-size:12px;color:#555;">${escHtml(job.parsedHeader?.taskId||'—')}</td>
+        <td class="col-bar"><div class="bar-wrap"><div class="bar-track"><div class="bar-fill${fillClass}" style="width:${job.pct}%"></div></div><span class="bar-label">${escHtml(job.barLabel)}</span></div></td>
+        <td class="col-pct">${pctHtml}</td>
+        <td class="col-ctl">${ctlHtml}</td>
+        <td class="col-act">${reportHtml}</td>
+      </tr>`;
     }
-  } else if (job.status === 'done' || job.status === 'error') {
-    ctlHtml = `<button class="btn-job-run" onclick="runSingle(${idx})">↺ Re-run</button>`;
-  } else {
-    ctlHtml = `<button class="btn-job-run" onclick="runSingle(${idx})">▶ Run</button>`;
-    // Bug 6: Individual remove button for pending jobs
-    if (job.status === 'pending') {
-      ctlHtml += `<button class="btn-job-run" onclick="removeJob(${idx})" style="background:#6c757d;color:white;margin-left:4px;padding:2px 8px;" title="Remove">✕</button>`;
-    }
-  }
-
-  return `<tr>
-    <td class="col-id" style="font-family:var(--mono);font-size:12px;font-weight:500;">${escHtml(job.file.name)}</td>
-    <td class="col-task" style="font-family:var(--mono);font-size:12px;color:#555;">${escHtml(job.parsedHeader?.taskId||'—')}</td>
-    <td class="col-bar"><div class="bar-wrap"><div class="bar-track"><div class="bar-fill${fillClass}" style="width:${job.pct}%"></div></div><span class="bar-label">${escHtml(job.barLabel)}</span></div></td>
-    <td class="col-pct">${pctHtml}</td>
-    <td class="col-ctl">${ctlHtml}</td>
-    <td class="col-act">${reportHtml}</td>
-  </tr>`;
-}
 
 function setJob(idx, updates) {
   Object.assign(jobs[idx], updates);
@@ -1369,14 +1396,10 @@ function updateGlobalBtns() {
   const btnRun    = document.getElementById('btnRunAll');
   const btnStop   = document.getElementById('btnStopAll');
 
-  if (runAllActive) {
-    btnRun.style.display = 'none';
-  } else {
-    btnRun.style.display = '';
-    btnRun.disabled = !hasPending;
-  }
+  btnRun.style.display = (runAllActive || isAnyRunning) ? 'none' : '';
+  btnRun.disabled = !hasPending;
 
-  // Bug 2: Stop button visibility is coupled to running state
+  // Stop button: show whenever ANY job is running (single or batch)
   btnStop.style.display = isAnyRunning ? '' : 'none';
 
   // Bug 5 & 6 visibility
@@ -1384,7 +1407,7 @@ function updateGlobalBtns() {
   const btnClear = document.getElementById('btnClearFolder');
   const btnAdd = document.getElementById('btnAddFiles');
   if (btnClear) btnClear.style.display = hasJobs ? 'inline-block' : 'none';
-  if (btnAdd) btnAdd.style.display = hasJobs ? 'inline-block' : 'none';
+  if (btnAdd) btnAdd.style.display = 'inline-block'; // always visible
 
   // Bug 7: Disable controls during execution
   document.getElementById('folderInput').disabled = isAnyRunning;
@@ -1400,74 +1423,115 @@ async function runAll() {
   if (runAllActive) return;
   runAllActive  = true;
   runAllStopped = false;
+  jobs.forEach(j => { if (j.status === 'pending') j.aborted = false; });
   updateGlobalBtns();
 
-  // Parallel worker pool (max 3 concurrent jobs)
   const MAX_CONCURRENT = 3;
-  const workers = Array(MAX_CONCURRENT).fill(null).map(async () => {
-    while (!runAllStopped) {
-      // Pick next pending job dynamically (handles newly added files)
-      const idx = jobs.findIndex(j => j.status === 'pending');
-      if (idx === -1) break;
 
-      // Mark as running immediately to lock it
+  // Semaphore — only MAX_CONCURRENT jobs run at once
+  // Workers run sequentially per slot, looping until NO pending jobs remain
+// Global queue — built once, consumed atomically by all workers
+  // Each job gets a unique ticket number — no two workers ever get the same idx
+  const queue = jobs.reduce((acc, j, i) => {
+    if (j.status === 'pending') acc.push(i);
+    return acc;
+  }, []);
+  let queueHead = 0;
+
+  // Lock so two workers can't grab same slot simultaneously
+  let grabLock = false;
+  async function grabNext() {
+    // Spin until lock is free
+    while (grabLock) await new Promise(r => setTimeout(r, 5));
+    grabLock = true;
+    const idx = queue[queueHead] ?? -1;
+    if (idx !== -1) {
+      queueHead++;
+      // Mark running immediately inside the lock so no other worker sees it as pending
+      jobs[idx].status  = 'running';
+      jobs[idx].aborted = false;
+    }
+    grabLock = false;
+    return idx;
+  }
+
+  const runWorker = async () => {
+    while (true) {
+      if (runAllStopped) break;
+
+      const idx = await grabNext();
+      if (idx === -1) break; // queue empty
+
       setJob(idx, { status: 'running', pct: 0, barLabel: 'Starting…' });
 
-      // small delay to let UI update and ensure lock is seen
-      await new Promise(r => setTimeout(r, 100));
+      if (runAllStopped) {
+        jobs[idx].aborted = true;
+        setJob(idx, { status: 'stopped', pct: 0, barLabel: 'Stopped' });
+        break;
+      }
 
       try {
         await processJob(idx);
       } catch (err) {
-        console.error(`Worker error on job ${idx}:`, err);
-        setJob(idx, { status: 'error', barLabel: 'Error: ' + err.message });
+        if (!jobs[idx].aborted && jobs[idx].status !== 'stopped') {
+          setJob(idx, { status: 'error', barLabel: 'Error: ' + err.message });
+        }
       }
+      // Loop back — worker grabs next job from queue
     }
-  });
+  };
 
-  await Promise.all(workers);
+  // Launch exactly MAX_CONCURRENT workers, each loops until queue empty
+  await Promise.all(Array(MAX_CONCURRENT).fill(null).map(() => runWorker()));
 
   runAllActive  = false;
   runAllStopped = false;
+  jobs.forEach((j, i) => {
+    if (j.status === 'running') { j.aborted = true; setJob(i, {status:'stopped', pct:0, barLabel:'Stopped'}); }
+  });
   updateGlobalBtns();
 }
-
-async function pauseJob(idx) {
-  jobs[idx].paused = true;
-  setJob(idx, { barLabel: 'Paused' });
-}
-
-async function resumeJob(idx) {
-  jobs[idx].paused = false;
-  setJob(idx, { barLabel: 'Running…' });
-}
-
 async function checkJobPause(idx) {
-  while (jobs[idx].paused && !runAllStopped) {
-    await new Promise(r => setTimeout(r, 500));
-  }
+  if (jobs[idx].aborted) throw new Error('Job aborted');
 }
-
 /* ── Stop All ────────────────────────────────────────────────────────── */
 function stopAll() {
   runAllStopped = true;
   runAllActive  = false;
   jobs.forEach((j, i) => {
-    if (j.status === 'running') setJob(i, {status:'pending', pct:0, barLabel:'Stopped'});
+    if (j.status === 'running') {
+      j.aborted = true;
+      j.paused  = false;
+      if (jobControllers[i]) { jobControllers[i].abort(); delete jobControllers[i]; }
+      setJob(i, {status:'stopped', pct:0, barLabel:'Stopped'});
+    }
   });
-  updateGlobalBtns();
 }
-
 /* ── Run single job independently ────────────────────────────────────── */
 async function runSingle(idx) {
   if (jobs[idx].status === 'running') return;
+  // Wait for any previous async process on this job to fully die
+  jobs[idx].aborted = true;
+  await new Promise(r => setTimeout(r, 200));
+  jobs[idx].aborted = false;
+  jobs[idx].paused  = false;
   setJob(idx, { status: 'running', pct: 0, barLabel: 'Starting…' });
   try {
     await processJob(idx);
   } catch (err) {
-    console.error(`Error on single job ${idx}:`, err);
+    if (!jobs[idx].aborted) {
+      console.error(`Error on single job ${idx}:`, err);
+      setJob(idx, { status: 'error', pct: 0, barLabel: 'Error: ' + err.message });
+    }
   }
   updateGlobalBtns();
+}
+
+function stopSingle(idx) {
+  jobs[idx].aborted = true;
+  jobs[idx].paused  = false;
+  if (jobControllers[idx]) { jobControllers[idx].abort(); delete jobControllers[idx]; }
+  setJob(idx, { status: 'stopped', pct: 0, barLabel: 'Stopped' });
 }
 function isEnglishPdf(fullText, filename) {
   // If text layer has Persian/Arabic chars it's Persian
@@ -1478,8 +1542,13 @@ function isEnglishPdf(fullText, filename) {
 
 async function processJob(idx) {
   const job = jobs[idx];
+  // Create a fresh AbortController for this job run
+  const controller = new AbortController();
+  jobControllers[idx] = controller;
+  const signal = controller.signal;
+
   try {
-    await checkJobPause(idx);
+    if (job.aborted) throw new Error('Job aborted');
 
     if (EXTRACT_PHOTOS) {
       setJob(idx, { status: 'running', pct: 2, barLabel: 'Submitting PDF...' });
@@ -1515,7 +1584,7 @@ async function processJob(idx) {
       setJob(idx, { status: 'running', pct: 2, barLabel: 'Using existing photos from MinIO...' });
     }
 
-    await checkJobPause(idx);
+    if (job.aborted) throw new Error('Job aborted');
     setJob(idx, { status: 'running', pct: 15, barLabel: 'Reading PDF…' });
     const fileBuffer = await job.file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({
@@ -1546,7 +1615,8 @@ async function processJob(idx) {
       return {num:task.num, desc:match?.desc??task.desc, result:task.result??'NOT_OK'};
     });
     const siteInfo = SITES_DATA.find(s => s.siteId.toUpperCase()===(job.parsedHeader.siteId||'').toUpperCase()) || null;
-      setJob(idx, {pct:40, barLabel:'Loading photos…'});
+      if (job.aborted) throw new Error('Job aborted');
+    setJob(idx, {pct:40, barLabel:'Loading photos…'});
     const itemPhotoMap = {};
 
     const PHOTO_MAX = window.APP_CONFIG.PHOTO_MAX_INDEX;
@@ -1569,7 +1639,8 @@ async function processJob(idx) {
       await Promise.all(job.parsedItems.slice(s, s + CONCURRENCY).map(fetchItemPhotos));
     }
 
-      setJob(idx, {pct:55, barLabel:'AI validation…'});
+      if (job.aborted) throw new Error('Job aborted');
+    setJob(idx, {pct:55, barLabel:'AI validation…'});
     const results = await runValidation(job.parsedItems, itemPhotoMap, job.parsedHeader, siteInfo, (i, total) => {
       const p = 55 + Math.round((i/total)*35);
       setJob(idx, {pct:p, barLabel:`Validating ${i}/${total}…`});
@@ -1581,7 +1652,7 @@ async function processJob(idx) {
 
     // Check LLM health after processing completes
     try {
-      const hRes = await fetch('/health');
+      const hRes = await  fetch('http://10.224.235.31:9701/health');
       const hData = await hRes.json();
       if (hData.llm && !hData.llm.available) {
         const warningHtml = `
@@ -1594,10 +1665,16 @@ async function processJob(idx) {
     } catch (e) {}
 
     setJob(idx, { status: 'done', pct: 100, barLabel: 'Complete', confirmation });
-  } catch (err) {
+} catch (err) {
+    // Clean up controller
+    if (jobControllers[idx]) { delete jobControllers[idx]; }
+    // If job was aborted/stopped, do not overwrite with error
+    if (job.aborted || jobs[idx].status === 'stopped') {
+      throw err; // re-throw so worker loop knows to stop, but UI stays as 'stopped'
+    }
     console.error('Job error:', err);
     setJob(idx, { status: 'error', pct: 100, barLabel: 'Failed: ' + err.message });
-    throw err; // re-throw so worker knows it failed
+    throw err;
   }
 }
 
@@ -1647,11 +1724,12 @@ async function getCheckboxStripImage(pdf,pageNum,anchorYs){
 
 async function detectCheckboxFromStrip(stripBase64){
   const prompt=`This image shows a single checkbox row from a maintenance report. It contains two checkboxes: one for "OK" and one for "Not OK". Look carefully at which checkbox has a checkmark/tick inside it.\nReturn ONLY one of these two values, nothing else:\nOK\nNOT_OK`;
-  try{
+try{
     const res=await fetch(LLM_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:LLM_MODEL,messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:stripBase64}}]}],temperature:0})});
+    if(res.status===429){return 'OK';} // rate limited — default to OK
     const data=await res.json();const answer=(data.choices?.[0]?.message?.content||'').trim().toUpperCase();
     return answer.includes('NOT_OK')?'NOT_OK':'OK';
-  }catch{return 'OK';}
+  }catch(e){if(e.name==='AbortError')throw e; return 'OK';}
 }
 
 function dedupeItems(items){
@@ -1800,7 +1878,7 @@ async function runValidation(parsedItems,itemPhotoMap,parsedHeader,siteInfo,onPr
         {type:'text',text:buildValidationPrompt(item,photos.length,reportDate,siteLat,siteLon,metaSummary,rule,parsedHeader)},
         ...photos.map(p=>({type:'image_url',image_url:{url:p.base64}}))
       ];
-      const raw=await callLLM(content);
+      const raw=await callLLM(content, jobControllers[jobIdx]?.signal);
       const match=raw.match(/\{[\s\S]*\}/);if(!match)throw new Error('No JSON in response');
       const llmResult=JSON.parse(match[0]);
       if(llmResult.verdict==='NO_EVIDENCE'&&photos.length>0)llmResult.verdict='DISPUTED';
@@ -1941,11 +2019,39 @@ document.getElementById('modalOverlay').addEventListener('click',e=>{
 });
 
 /* ══ UTILITIES ══ */
-async function callLLM(content){
-  const res=await fetch(LLM_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:LLM_MODEL,messages:[{role:'user',content}]})});
-  const data=await res.json();
-  if(!data.choices||!data.choices.length)throw new Error('Invalid LLM response: '+JSON.stringify(data));
-  return data.choices[0].message.content;
+async function callLLM(content, signal){
+  const MAX_RETRIES = 5;
+  let delay = 2000;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (signal && signal.aborted) throw new Error('Job aborted');
+    try {
+      const res = await fetch(LLM_URL, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model:LLM_MODEL, messages:[{role:'user',content}]}),
+        signal
+      });
+      if (res.status === 429) {
+        // Too many requests — wait and retry
+        const retryAfter = parseInt(res.headers.get('Retry-After') || '0') * 1000 || delay;
+        await new Promise(r => setTimeout(r, retryAfter));
+        delay = Math.min(delay * 2, 30000); // exponential backoff max 30s
+        continue;
+      }
+      const data = await res.json();
+      if (!data.choices || !data.choices.length) throw new Error('Invalid LLM response: ' + JSON.stringify(data));
+      return data.choices[0].message.content;
+    } catch(err) {
+      if (err.name === 'AbortError' || err.message === 'Job aborted') throw new Error('Job aborted');
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, delay));
+        delay = Math.min(delay * 2, 30000);
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw new Error('LLM failed after retries');
 }
 
 function haversine(lat1,lon1,lat2,lon2){
@@ -2051,7 +2157,7 @@ function clearFolder() {
 }
 
 function removeJob(idx) {
-  if (jobs[idx].status !== 'pending') return;
+  if (jobs[idx].status === 'running') return;
   jobs.splice(idx, 1);
   sessionStorage.setItem('lastFileNames', JSON.stringify(jobs.map(j => j.file.name)));
   if (jobs.length === 0) {
